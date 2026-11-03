@@ -1,27 +1,4 @@
 #!/usr/bin/env python3
-"""
-Participação feminina nos anais do SBSeg (e de um evento de referência).
-
-Fluxo:
-  1. Baixa os metadados dos artigos de cada evento no SOL (SBC OpenLib), via
-     OAI-PMH, que é o repositório oficial dos anais. Alternativa: --fonte dblp.
-  2. Extrai o primeiro nome de cada autor(a) e consulta a API de Nomes do
-     Censo (IBGE) para estimar o gênero com base nas frequências por sexo.
-  3. Calcula as métricas por edição e por período e salva CSVs, uma figura
-     e as linhas de tabela prontas para o LaTeX.
-
-Uso (no seu computador, com internet):
-    python3 coleta_sbseg.py
-    python3 coleta_sbseg.py --venues sbseg sbrc --ano-min 2001 --ano-max 2025
-
-IMPORTANTE: confira saida/artigos.csv e a contagem por ano impressa no terminal
-contra o sumário de cada edição do evento. O SOL pode trazer itens que não são
-artigos (prefácios, palestras) ou datas de publicação diferentes do ano da edição.
-
-Só usa a biblioteca padrão; a figura exige matplotlib (pip install matplotlib).
-A primeira execução leva alguns minutos por causa das consultas ao IBGE; os
-resultados ficam em cache (saida/cache_ibge.json) e as próximas são rápidas.
-"""
 import argparse
 import csv
 import json
@@ -42,11 +19,10 @@ NS_DC = "http://purl.org/dc/elements/1.1/"
 DBLP = "https://dblp.org/search/publ/api"
 IBGE = "https://servicodados.ibge.gov.br/api/v2/censos/nomes/{nome}?sexo={sexo}"
 CABECALHO = {"User-Agent": "estudo-genero-wpos/1.0 (pesquisa academica)"}
-CACHE = {}  # preenchido em main(): pasta de saída e opção --refazer
-VERSAO = "2026-11-03-f"  # impressa ao iniciar, para saber qual arquivo está rodando
-COR_MULHERES = "#D81B7A"  # rosa da linha do evento principal na figura
-FILTROS = {"min_paginas": 0}  # preenchido em main(): --min-paginas
-
+CACHE = {}  
+VERSAO = "2026-11-03-f"  
+COR_MULHERES = "#D81B7A" 
+FILTROS = {"min_paginas": 0} 
 
 def obter_json(url, tentativas=4, pausa=2.0):
     ultimo_erro = None
@@ -55,14 +31,12 @@ def obter_json(url, tentativas=4, pausa=2.0):
             req = urllib.request.Request(url, headers=CABECALHO)
             with urllib.request.urlopen(req, timeout=30) as resp:
                 return json.load(resp)
-        except Exception as erro:  # rede, 429, JSON inválido
+        except Exception as erro: 
             ultimo_erro = erro
             time.sleep(pausa * (i + 1))
     print(f"[aviso] falha em {url}: {ultimo_erro}", file=sys.stderr)
     return None
 
-
-# ------------------------------------------------------------------ SOL
 TITULOS_IGNORADOS = re.compile(
     r"^(pref[aá]cio|apresenta[cç][aã]o|front matter|[íi]ndice|sum[aá]rio|"
     r"comit[eê]|organiza[cç][aã]o|editorial|palestra|keynote)", re.I)
@@ -83,7 +57,6 @@ def obter_xml(url, tentativas=4, pausa=2.0):
 
 
 def baixar_evento_sol(venue):
-    """Lista de registros Dublin Core ({campo: [valores]}) do periódico <venue> no SOL."""
     arquivo = Path(CACHE["pasta"]) / f"oai_{venue}.json" if CACHE.get("pasta") else None
     if arquivo and arquivo.exists() and not CACHE.get("refazer"):
         print(f"       usando cache local {arquivo} (use --refazer para baixar de novo)")
@@ -91,7 +64,6 @@ def baixar_evento_sol(venue):
     base = SOL_OAI.format(venue=venue)
     url = f"{base}?verb=ListRecords&metadataPrefix=oai_dc"
     registros, tokens_vistos, sem_novos, pagina = [], set(), 0, 0
-    # Ctrl+C encerra a coleta e segue com os registros já recebidos (sem gravar cache parcial)
     interrompido = []
     handler_anterior = signal.signal(signal.SIGINT, lambda *_: interrompido.append(1))
     while url and not interrompido:
@@ -124,9 +96,6 @@ def baixar_evento_sol(venue):
               f"total válido: {len(registros)}", flush=True)
         token = raiz.find(f".//{{{NS_OAI}}}resumptionToken")
         texto = (token.text or "").strip() if token is not None else ""
-        # Depois do último registro válido o SOL continua devolvendo páginas (vazias ou só
-        # com registros apagados) e tokens novos. Para após 3 páginas seguidas sem nenhum
-        # registro válido, sem token, com token repetido ou ao atingir 200 páginas.
         sem_novos = sem_novos + 1 if novos == 0 else 0
         if (n_pagina == 0 or not texto or texto in tokens_vistos
                 or sem_novos >= 3 or pagina >= 200):
@@ -144,7 +113,6 @@ def baixar_evento_sol(venue):
 
 
 def nome_de_dc(creator):
-    """'Sobrenome, Nome' (padrão do OJS) -> 'Nome Sobrenome'."""
     c = creator.strip()
     if "," in c:
         sobrenome, _, resto = c.partition(",")
@@ -153,7 +121,6 @@ def nome_de_dc(creator):
 
 
 def paginas_do_registro(campos):
-    """Nº de páginas segundo o dc:source do SOL; None se ausente ou inconsistente."""
     for s in campos.get("source", []):
         m = re.search(r";\s*(\d+)-(\d+)\s*$", s)
         if s.startswith("Anais") and m:
@@ -206,7 +173,6 @@ def artigos_do_evento_sol(venue, ano_min, ano_max):
 
 
 def diagnosticar(venues):
-    """Testa a conexão com o SOL (OAI-PMH) e com a API de nomes do IBGE."""
     for v in venues:
         url = SOL_OAI.format(venue=v) + "?verb=Identify"
         print(f"GET {url}")
@@ -226,9 +192,7 @@ def diagnosticar(venues):
           sum(p["frequencia"] for p in dados[0]["res"]) if dados else "sem resposta")
 
 
-# ----------------------------------------------------------------- DBLP
 def baixar_evento(venue):
-    """Retorna a lista de registros ('info') do DBLP para conf/<venue>."""
     registros, deslocamento = [], 0
     consulta = urllib.parse.quote(f"stream:streams/conf/{venue}:")
     while True:
@@ -249,7 +213,6 @@ def baixar_evento(venue):
 
 
 def limpar_nome(nome):
-    """Remove o sufixo numérico de desambiguação do DBLP (ex.: 'Ana Silva 0002')."""
     return re.sub(r"\s\d{4}$", "", nome).strip()
 
 
@@ -257,7 +220,7 @@ def artigos_do_evento(venue, ano_min, ano_max):
     vistos, artigos = set(), []
     for info in baixar_evento(venue):
         if info.get("type") != "Conference and Workshop Papers":
-            continue  # descarta prefácios/editoriais (tipo 'Editorship')
+            continue  
         chave = info.get("key")
         if chave in vistos or "authors" not in info:
             continue
@@ -283,14 +246,13 @@ def artigos_do_evento(venue, ano_min, ano_max):
     return artigos
 
 
-# ---------------------------------------------------------------- Gênero
 def primeiro_nome(nome):
     partes = nome.split()
     if not partes:
         return ""
     token = unicodedata.normalize("NFKD", partes[0]).encode("ascii", "ignore").decode()
     token = re.sub(r"[^A-Za-z]", "", token).upper()
-    return token if len(token) >= 2 else ""  # iniciais ('J.') ficam sem classificação
+    return token if len(token) >= 2 else ""  
 
 
 class ClassificadorIBGE:
@@ -300,12 +262,11 @@ class ClassificadorIBGE:
         self.cache = json.loads(self.arquivo.read_text()) if self.arquivo.exists() else {}
 
     def _frequencia(self, nome, sexo):
-        """Frequência do nome para o sexo; None se a consulta falhou (não vai para o cache)."""
         dados = obter_json(IBGE.format(nome=urllib.parse.quote(nome), sexo=sexo))
         if dados is None:
             return None
         if not dados:
-            return 0  # nome inexistente na base é uma resposta válida
+            return 0 
         return sum(p["frequencia"] for p in dados[0].get("res", []))
 
     def _buscar(self, nome):
@@ -313,7 +274,6 @@ class ClassificadorIBGE:
         return None if f is None or m is None else {"F": f, "M": m}
 
     def pre_carregar(self, nomes, trabalhadores=6):
-        """Consulta em paralelo os nomes que ainda não estão no cache, com progresso."""
         from concurrent.futures import ThreadPoolExecutor
         faltam = [n for n in sorted(set(nomes)) if n and n not in self.cache]
         if not faltam:
@@ -338,12 +298,11 @@ class ClassificadorIBGE:
         if nome not in self.cache:
             c = self._buscar(nome)
             if c is None:
-                return {"F": 0, "M": 0}  # falha: classifica como 'U' sem gravar no cache
+                return {"F": 0, "M": 0}  
             self.cache[nome] = c
         return self.cache[nome]
 
     def classificar(self, nome):
-        """Retorna 'F', 'M', 'A' (ambíguo) ou 'U' (sem informação)."""
         if not nome:
             return "U"
         c = self.contagens(nome)
@@ -361,9 +320,7 @@ class ClassificadorIBGE:
         self.arquivo.write_text(json.dumps(self.cache, ensure_ascii=False, indent=0))
 
 
-# ------------------------------------------------------------- Estatística
 def estatisticas(linhas):
-    """Métricas para um conjunto de autorias (um evento em um ano ou período)."""
     artigos = defaultdict(list)
     for l in linhas:
         artigos[l["chave"]].append(l)
@@ -398,7 +355,6 @@ def agrupar(linhas, chave):
 
 
 def rotulo_periodo(ano, ano_min, janela, ano_max=None):
-    """Rótulo do período; o último é cortado em ano_max (ex.: '2026' em vez de '2026--2030')."""
     inicio = ano_min + ((ano - ano_min) // janela) * janela
     fim = inicio + janela - 1
     if ano_max is not None:
@@ -458,7 +414,6 @@ def main():
         if not artigos:
             print(f"[aviso] nenhum artigo para '{venue}'. Confira a chave do evento e a conexão.",
                   file=sys.stderr)
-        # Confira esta contagem por ano contra o sumário das edições
         print("       por ano:", dict(sorted(Counter(a["ano"] for a in artigos).items())))
         clf.pre_carregar(primeiro_nome(n) for art in artigos for n in art["autores"])
         for art in artigos:
@@ -493,7 +448,6 @@ def main():
                                                         args.ano_max)).items())]
     salvar_csv(saida / "resumo_por_periodo.csv", por_periodo, campos)
 
-    # Linhas de tabela LaTeX para o evento principal (usadas via \input no artigo)
     principal = args.venues[0]
     with open(saida / "tabela_periodos.tex", "w", encoding="utf-8") as f:
         for r in por_periodo:
@@ -504,7 +458,6 @@ def main():
                     formatar(r["primeira_autora_pct"]),
                 ]) + " \\\\\n")
 
-    # Totais gerais (úteis para o texto)
     print("\n=== Totais ===")
     for v in args.venues:
         l = [x for x in linhas if x["venue"] == v]
@@ -512,7 +465,6 @@ def main():
             e = estatisticas(l)
             print(v, e)
 
-    # Figura
     try:
         import matplotlib
         matplotlib.use("Agg")
