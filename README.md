@@ -84,8 +84,10 @@ Mais detalhes, incluindo as análises de sensibilidade, estão na seção "Amea�
 
 Foram usados apenas metadados bibliográficos públicos, apresentados de forma agregada. A justificativa sobre a avaliação pelo sistema CEP/CONEP está na seção "Ética e reprodutibilidade" do artigo.
 
+<!--
+
 ## Como citar
 
 > SADIO, L.; HOLANDA, M. Participação feminina nos anais do SBSeg: uma análise bibliométrica por edição. In: Workshop de Graduação e Pós-Graduação do CIC/UnB (WPOS), 21., 2026, Brasília. Universidade de Brasília, 2026.
 
-Código e resultados: <https://github.com/laliahaidara/WPOS>
+Código e resultados: <https://github.com/laliahaidara/WPOS> --> 
